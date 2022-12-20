@@ -1,5 +1,6 @@
 extern crate time_ as time;
 
+use std::collections::HashSet;
 use std::ops::Bound;
 
 use sqlx::postgres::types::{Oid, PgInterval, PgMoney, PgRange};
@@ -13,6 +14,10 @@ test_type!(null<Option<i16>>(Postgres,
 
 test_type!(null_vec<Vec<Option<i16>>>(Postgres,
     "array[10,NULL,50]::int2[]" == vec![Some(10_i16), None, Some(50)],
+));
+
+test_type!(null_set<HashSet<Option<i16>>>(Postgres,
+    "array[10,NULL,50]::int2[]" == HashSet::from([Some(10_i16), None, Some(50)]),
 ));
 
 test_type!(null_array<[Option<i16>; 3]>(Postgres,
@@ -39,6 +44,15 @@ test_type!(byte_vec<Vec<u8>>(Postgres,
         == Vec::<u8>::new(),
     "E'\\\\x0000000052'::bytea"
         == vec![0_u8, 0, 0, 0, 0x52]
+));
+
+test_type!(byte_set<HashSet<u8>>(Postgres,
+    "E'\\\\xDEADBEEF'::bytea"
+        == HashSet::from([0xDE_u8, 0xAD, 0xBE, 0xEF]),
+    "E'\\\\x'::bytea"
+        == HashSet::<u8>::new(),
+    "E'\\\\x0000000052'::bytea"
+        == HashSet::from([0_u8, 0, 0, 0, 0x52)]
 ));
 
 // BYTEA cannot be decoded by-reference from a simple query as postgres sends it as hex
@@ -70,14 +84,25 @@ test_type!(string<String>(Postgres,
 ));
 
 test_type!(string_vec<Vec<String>>(Postgres,
-    "array['one','two','three']::text[]"
-        == vec!["one","two","three"],
+    "array['one','two','three','one']::text[]"
+        == vec!["one","two","three","one"],
 
     "array['', '\"']::text[]"
         == vec!["", "\""],
 
     "array['Hello, World', '', 'Goodbye']::text[]"
         == vec!["Hello, World", "", "Goodbye"]
+));
+
+test_type!(string_set<HashSet<String>>(Postgres,
+    "array['one','two','three','one']::text[]"
+        == HashSet::from(["one","two","three"]),
+
+    "array['', '\"']::text[]"
+        == HashSet::from(["", "\""]),
+
+    "array['Hello, World', '', 'Goodbye']::text[]"
+        == HashSet::from(["Hello, World", "", "Goodbye"])
 ));
 
 test_type!(string_array<[String; 3]>(Postgres,
@@ -105,10 +130,17 @@ test_type!(i32(
 ));
 
 test_type!(i32_vec<Vec<i32>>(Postgres,
-    "'{5,10,50,100}'::int[]" == vec![5_i32, 10, 50, 100],
+    "'{5,5,10,50,100}'::int[]" == vec![5_i32, 5, 10, 50, 100],
     "'{1050}'::int[]" == vec![1050_i32],
     "'{}'::int[]" == Vec::<i32>::new(),
     "'{1,3,-5}'::int[]" == vec![1_i32, 3, -5]
+));
+
+test_type!(i32_set<HashSet<i32>>(Postgres,
+    "'{5,5,10,50,100}'::int[]" == HashSet::from[5_i32, 10, 50, 100]),
+    "'{1050}'::int[]" == vec![1050_i32],
+    "'{}'::int[]" == HashSet::<i32>::new(),
+    "'{1,3,-5}'::int[]" == HashSet::from[1_i32, 3, -5])
 ));
 
 test_type!(i32_array_empty<[i32; 0]>(Postgres,
@@ -130,6 +162,11 @@ test_type!(f64(
 
 test_type!(f64_vec<Vec<f64>>(Postgres,
     "'{939399419.1225182,-12.0}'::float8[]" == vec![939399419.1225182_f64, -12.0]
+));
+
+
+test_type!(f64_set<HashSet<f64>>(Postgres,
+    "'{939399419.1225182,-12.0}'::float8[]" == HashSet::from([939399419.1225182_f64, -12.0])
 ));
 
 test_decode_type!(bool_tuple<(bool,)>(Postgres, "row(true)" == (true,)));
@@ -164,6 +201,15 @@ test_type!(uuid_vec<Vec<sqlx::types::Uuid>>(Postgres,
            sqlx::types::Uuid::parse_str("b731678f-636f-4135-bc6f-19440c13bd19").unwrap(),
            sqlx::types::Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap()
         ]
+));
+
+#[cfg(feature = "uuid")]
+test_type!(uuid_set<HashSet<sqlx::types::Uuid>>(Postgres,
+    "'{b731678f-636f-4135-bc6f-19440c13bd19,b731678f-636f-4135-bc6f-19440c13bd19,00000000-0000-0000-0000-000000000000}'::uuid[]"
+        == HashSet::from([
+           sqlx::types::Uuid::parse_str("b731678f-636f-4135-bc6f-19440c13bd19").unwrap(),
+           sqlx::types::Uuid::parse_str("00000000-0000-0000-0000-000000000000").unwrap()
+        ])
 ));
 
 #[cfg(feature = "ipnetwork")]
@@ -236,6 +282,15 @@ test_type!(ipnetwork_vec<Vec<sqlx::types::ipnetwork::IpNetwork>>(Postgres,
         ]
 ));
 
+#[cfg(feature = "ipnetwork")]
+test_type!(ipnetwork_set<HashSet<sqlx::types::ipnetwork::IpNetwork>>(Postgres,
+    "'{127.0.0.1,8.8.8.8/24}'::inet[]"
+        == HashSet::from([
+           "127.0.0.1".parse::<sqlx::types::ipnetwork::IpNetwork>().unwrap(),
+           "8.8.8.8/24".parse::<sqlx::types::ipnetwork::IpNetwork>().unwrap()
+        ])
+));
+
 #[cfg(feature = "mac_address")]
 test_type!(mac_address_vec<Vec<sqlx::types::mac_address::MacAddress>>(Postgres,
     "'{01:02:03:04:05:06,FF:FF:FF:FF:FF:FF}'::macaddr[]"
@@ -243,6 +298,15 @@ test_type!(mac_address_vec<Vec<sqlx::types::mac_address::MacAddress>>(Postgres,
            "01:02:03:04:05:06".parse::<sqlx::types::mac_address::MacAddress>().unwrap(),
            "FF:FF:FF:FF:FF:FF".parse::<sqlx::types::mac_address::MacAddress>().unwrap()
         ]
+));
+
+#[cfg(feature = "mac_address")]
+test_type!(mac_address_set<HashSet<sqlx::types::mac_address::MacAddress>>(Postgres,
+    "'{01:02:03:04:05:06,FF:FF:FF:FF:FF:FF}'::macaddr[]"
+        == HashSet::from([
+           "01:02:03:04:05:06".parse::<sqlx::types::mac_address::MacAddress>().unwrap(),
+           "FF:FF:FF:FF:FF:FF".parse::<sqlx::types::mac_address::MacAddress>().unwrap()
+        ])
 ));
 
 #[cfg(feature = "chrono")]
@@ -272,6 +336,11 @@ mod chrono {
             == vec![NaiveDate::from_ymd(2019, 1, 2).and_hms(5, 10, 20)]
     ));
 
+    test_type!(chrono_date_time_set<HashSet<NaiveDateTime>>(Postgres,
+        "array['2019-01-02 05:10:20']::timestamp[]"
+            == HashSet::from([NaiveDate::from_ymd(2019, 1, 2).and_hms(5, 10, 20)])
+    ));
+
     test_type!(chrono_date_time_tz_utc<DateTime::<Utc>>(Postgres,
         "TIMESTAMPTZ '2019-01-02 05:10:20.115100'"
             == DateTime::<Utc>::from_utc(
@@ -293,6 +362,16 @@ mod chrono {
                     Utc,
                 )
             ]
+    ));
+
+    test_type!(chrono_date_time_tz_set<HashSet<DateTime::<Utc>>>(Postgres,
+        "array['2019-01-02 05:10:20.115100']::timestamptz[]"
+            == HashSet::from([
+                DateTime::<Utc>::from_utc(
+                    NaiveDate::from_ymd(2019, 1, 2).and_hms_micro(5, 10, 20, 115100),
+                    Utc,
+                )
+            ])
     ));
 
     test_type!(chrono_time_tz<PgTimeTz>(Postgres,
@@ -373,6 +452,13 @@ mod json {
         "array['\"😎\"'::json, '\"🙋‍♀️\"'::json]::json[]" == vec![json!("😎"), json!("🙋‍♀️")],
     ));
 
+    test_type!(json_set<HashSet<JsonValue>>(
+        Postgres,
+        "SELECT ({0}::jsonb[] is not distinct from $1::jsonb[])::int4, {0} as _2, $2 as _3",
+        "array['\"😎\"'::json, '\"🙋‍♀️\"'::json]::json[]" == HashSet::from([json!("😎"), json!("🙋‍♀️")]),
+    ));
+
+
     test_type!(json_array<[JsonValue; 2]>(
         Postgres,
         "SELECT ({0}::jsonb[] is not distinct from $1::jsonb[])::int4, {0} as _2, $2 as _3",
@@ -392,6 +478,11 @@ mod json {
         "array['\"😎\"'::jsonb, '\"🙋‍♀️\"'::jsonb]::jsonb[]" == vec![json!("😎"), json!("🙋‍♀️")],
     ));
 
+    test_type!(jsonb_set<HashSet<JsonValue>>(
+        Postgres,
+        "array['\"😎\"'::jsonb, '\"🙋‍♀️\"'::jsonb]::jsonb[]" == HashSet::from([json!("😎"), json!("🙋‍♀️")]),
+    ));
+
     #[derive(serde::Deserialize, serde::Serialize, Debug, PartialEq)]
     struct Friend {
         name: String,
@@ -408,6 +499,14 @@ mod json {
                 Json(Friend { name: "Joe".to_string(), age: 33 }),
                 Json(Friend { name: "Bob".to_string(), age: 22 }),
             ]
+    ));
+
+    test_type!(json_struct_set<HashSet<Json<Friend>>>(Postgres,
+        "array['{\"name\":\"Joe\",\"age\":33}','{\"name\":\"Bob\",\"age\":22}']::jsonb[]"
+            == HashSet::from([
+                Json(Friend { name: "Joe".to_string(), age: 33 }),
+                Json(Friend { name: "Bob".to_string(), age: 22 }),
+            ])
     ));
 
     #[sqlx_macros::test]
@@ -547,6 +646,10 @@ test_prepared_type!(money_vec<Vec<PgMoney>>(Postgres,
     "array[123.45,420.00,666.66]::money[]" == vec![PgMoney(12345), PgMoney(42000), PgMoney(66666)],
 ));
 
+test_prepared_type!(money_set<HashSet<PgMoney>>(Postgres,
+    "array[123.45,420.00,666.66]::money[]" == HashSet::from([PgMoney(12345), PgMoney(42000), PgMoney(66666)]),
+));
+
 // FIXME: needed to disable `ltree` tests in version that don't have a binary format for it
 // but `PgLTree` should just fall back to text format
 #[cfg(postgres_14)]
@@ -564,4 +667,15 @@ test_type!(ltree_vec<Vec<sqlx::postgres::types::PgLTree>>(Postgres,
             sqlx::postgres::types::PgLTree::from_str("Foo.Bar.Baz.Quux").unwrap(),
             sqlx::postgres::types::PgLTree::from_iter(["Alpha", "Beta", "Delta", "Gamma"]).unwrap()
         ]
+));
+
+// FIXME: needed to disable `ltree` tests in version that don't have a binary format for it
+// but `PgLTree` should just fall back to text format
+#[cfg(postgres_14)]
+test_type!(ltree_set<HashSet<sqlx::postgres::types::PgLTree>>(Postgres,
+    "array['Foo.Bar.Baz.Quux', 'Alpha.Beta.Delta.Gamma']::ltree[]" ==
+        HashSet::from([
+            sqlx::postgres::types::PgLTree::from_str("Foo.Bar.Baz.Quux").unwrap(),
+            sqlx::postgres::types::PgLTree::from_iter(["Alpha", "Beta", "Delta", "Gamma"]).unwrap()
+        ])
 ));
