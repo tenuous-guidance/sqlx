@@ -1,5 +1,6 @@
 use bytes::Buf;
 use std::borrow::Cow;
+use std::collections::HashSet;
 
 use crate::decode::Decode;
 use crate::encode::{Encode, IsNull};
@@ -65,6 +66,16 @@ where
 
     fn compatible(ty: &PgTypeInfo) -> bool {
         T::array_compatible(ty)
+    }
+}
+
+impl<'q, T> Encode<'q, Postgres> for HashSet<T>
+where
+    T: Encode<'q, Postgres> + Type<Postgres>,
+{
+    #[inline]
+    fn encode_by_ref(&self, buf: &mut PgArgumentBuffer) -> IsNull {
+        encode_iterator(self.iter(), buf, self.len())
     }
 }
 
