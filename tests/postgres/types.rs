@@ -46,15 +46,6 @@ test_type!(byte_vec<Vec<u8>>(Postgres,
         == vec![0_u8, 0, 0, 0, 0x52]
 ));
 
-test_type!(byte_set<HashSet<u8>>(Postgres,
-    "E'\\\\xDEADBEEF'::bytea"
-        == HashSet::from([0xDE_u8, 0xAD, 0xBE, 0xEF]),
-    "E'\\\\x'::bytea"
-        == HashSet::<u8>::new(),
-    "E'\\\\x0000000052'::bytea"
-        == HashSet::from([0_u8, 0, 0, 0, 0x52)]
-));
-
 // BYTEA cannot be decoded by-reference from a simple query as postgres sends it as hex
 test_prepared_type!(byte_slice<&[u8]>(Postgres,
     "E'\\\\xDEADBEEF'::bytea"
@@ -96,13 +87,13 @@ test_type!(string_vec<Vec<String>>(Postgres,
 
 test_type!(string_set<HashSet<String>>(Postgres,
     "array['one','two','three','one']::text[]"
-        == HashSet::from(["one","two","three"]),
+        == HashSet::from(["one","two","three"].map(str::to_owned)),
 
     "array['', '\"']::text[]"
-        == HashSet::from(["", "\""]),
+        == HashSet::from(["", "\""].map(str::to_owned)),
 
     "array['Hello, World', '', 'Goodbye']::text[]"
-        == HashSet::from(["Hello, World", "", "Goodbye"])
+        == HashSet::from(["Hello, World", "", "Goodbye"].map(str::to_owned))
 ));
 
 test_type!(string_array<[String; 3]>(Postgres,
@@ -137,10 +128,10 @@ test_type!(i32_vec<Vec<i32>>(Postgres,
 ));
 
 test_type!(i32_set<HashSet<i32>>(Postgres,
-    "'{5,5,10,50,100}'::int[]" == HashSet::from[5_i32, 10, 50, 100]),
-    "'{1050}'::int[]" == vec![1050_i32],
+    "'{5,5,10,50,100}'::int[]" == HashSet::from([5_i32, 10, 50, 100]),
+    "'{1050}'::int[]" == HashSet::from([1050_i32]),
     "'{}'::int[]" == HashSet::<i32>::new(),
-    "'{1,3,-5}'::int[]" == HashSet::from[1_i32, 3, -5])
+    "'{1,3,-5}'::int[]" == HashSet::from([1_i32, 3, -5])
 ));
 
 test_type!(i32_array_empty<[i32; 0]>(Postgres,
@@ -162,11 +153,6 @@ test_type!(f64(
 
 test_type!(f64_vec<Vec<f64>>(Postgres,
     "'{939399419.1225182,-12.0}'::float8[]" == vec![939399419.1225182_f64, -12.0]
-));
-
-
-test_type!(f64_set<HashSet<f64>>(Postgres,
-    "'{939399419.1225182,-12.0}'::float8[]" == HashSet::from([939399419.1225182_f64, -12.0])
 ));
 
 test_decode_type!(bool_tuple<(bool,)>(Postgres, "row(true)" == (true,)));
@@ -452,13 +438,6 @@ mod json {
         "array['\"😎\"'::json, '\"🙋‍♀️\"'::json]::json[]" == vec![json!("😎"), json!("🙋‍♀️")],
     ));
 
-    test_type!(json_set<HashSet<JsonValue>>(
-        Postgres,
-        "SELECT ({0}::jsonb[] is not distinct from $1::jsonb[])::int4, {0} as _2, $2 as _3",
-        "array['\"😎\"'::json, '\"🙋‍♀️\"'::json]::json[]" == HashSet::from([json!("😎"), json!("🙋‍♀️")]),
-    ));
-
-
     test_type!(json_array<[JsonValue; 2]>(
         Postgres,
         "SELECT ({0}::jsonb[] is not distinct from $1::jsonb[])::int4, {0} as _2, $2 as _3",
@@ -478,12 +457,7 @@ mod json {
         "array['\"😎\"'::jsonb, '\"🙋‍♀️\"'::jsonb]::jsonb[]" == vec![json!("😎"), json!("🙋‍♀️")],
     ));
 
-    test_type!(jsonb_set<HashSet<JsonValue>>(
-        Postgres,
-        "array['\"😎\"'::jsonb, '\"🙋‍♀️\"'::jsonb]::jsonb[]" == HashSet::from([json!("😎"), json!("🙋‍♀️")]),
-    ));
-
-    #[derive(serde::Deserialize, serde::Serialize, Debug, PartialEq)]
+    #[derive(serde::Deserialize, serde::Serialize, Debug, PartialEq, Eq, Hash)]
     struct Friend {
         name: String,
         age: u32,
@@ -644,10 +618,6 @@ test_prepared_type!(money<PgMoney>(Postgres, "123.45::money" == PgMoney(12345)))
 
 test_prepared_type!(money_vec<Vec<PgMoney>>(Postgres,
     "array[123.45,420.00,666.66]::money[]" == vec![PgMoney(12345), PgMoney(42000), PgMoney(66666)],
-));
-
-test_prepared_type!(money_set<HashSet<PgMoney>>(Postgres,
-    "array[123.45,420.00,666.66]::money[]" == HashSet::from([PgMoney(12345), PgMoney(42000), PgMoney(66666)]),
 ));
 
 // FIXME: needed to disable `ltree` tests in version that don't have a binary format for it

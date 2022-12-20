@@ -1,6 +1,7 @@
 use bytes::Buf;
 use std::borrow::Cow;
 use std::collections::HashSet;
+use std::hash::Hash;
 
 use crate::decode::Decode;
 use crate::encode::{Encode, IsNull};
@@ -57,6 +58,19 @@ where
 }
 
 impl<T, const N: usize> Type<Postgres> for [T; N]
+where
+    T: PgHasArrayType,
+{
+    fn type_info() -> PgTypeInfo {
+        T::array_type_info()
+    }
+
+    fn compatible(ty: &PgTypeInfo) -> bool {
+        T::array_compatible(ty)
+    }
+}
+
+impl<T> Type<Postgres> for HashSet<T>
 where
     T: PgHasArrayType,
 {
@@ -159,6 +173,15 @@ where
 impl<'r, T> Decode<'r, Postgres> for Vec<T>
 where
     T: for<'a> Decode<'a, Postgres> + Type<Postgres>,
+{
+    fn decode(value: PgValueRef<'r>) -> Result<Self, BoxDynError> {
+        decode_iterator(value)
+    }
+}
+
+impl<'r, T> Decode<'r, Postgres> for HashSet<T>
+where
+    T: for<'a> Decode<'a, Postgres> + Type<Postgres> + Hash + PartialEq + Eq,
 {
     fn decode(value: PgValueRef<'r>) -> Result<Self, BoxDynError> {
         decode_iterator(value)
