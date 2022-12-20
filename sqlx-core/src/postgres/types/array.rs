@@ -70,22 +70,20 @@ where
 
 impl<'q, T> Encode<'q, Postgres> for Vec<T>
 where
-    for<'a> &'a [T]: Encode<'q, Postgres>,
-    T: Encode<'q, Postgres>,
+    T: Encode<'q, Postgres> + Type<Postgres>,
 {
     #[inline]
     fn encode_by_ref(&self, buf: &mut PgArgumentBuffer) -> IsNull {
-        self.as_slice().encode_by_ref(buf)
+        encode_iterator(self.iter(), buf, self.len())
     }
 }
 
 impl<'q, T, const N: usize> Encode<'q, Postgres> for [T; N]
 where
-    for<'a> &'a [T]: Encode<'q, Postgres>,
-    T: Encode<'q, Postgres>,
+    T: Encode<'q, Postgres> + Type<Postgres>,
 {
     fn encode_by_ref(&self, buf: &mut PgArgumentBuffer) -> IsNull {
-        self.as_slice().encode_by_ref(buf)
+        encode_iterator(self.iter(), buf, self.len())
     }
 }
 
@@ -94,33 +92,44 @@ where
     T: Encode<'q, Postgres> + Type<Postgres>,
 {
     fn encode_by_ref(&self, buf: &mut PgArgumentBuffer) -> IsNull {
-        let type_info = if self.len() < 1 {
-            T::type_info()
-        } else {
-            self[0].produces().unwrap_or_else(T::type_info)
-        };
-
-        buf.extend(&1_i32.to_be_bytes()); // number of dimensions
-        buf.extend(&0_i32.to_be_bytes()); // flags
-
-        // element type
-        match type_info.0 {
-            PgType::DeclareWithName(name) => buf.patch_type_by_name(&name),
-
-            ty => {
-                buf.extend(&ty.oid().0.to_be_bytes());
-            }
-        }
-
-        buf.extend(&(self.len() as i32).to_be_bytes()); // len
-        buf.extend(&1_i32.to_be_bytes()); // lower bound
-
-        for element in self.iter() {
-            buf.encode(element);
-        }
-
-        IsNull::No
+        encode_iterator(self.iter(), buf, self.len())
     }
+}
+
+/// To avoid larger changes, which may be breaking, make a utility function for this, instead of
+/// implementing it across all Iterators.
+fn encode_iterator<'i, 'q, T, I>(iter: I, buf: &mut PgArgumentBuffer, len: usize) -> IsNull
+where
+    T: Encode<'q, Postgres> + Type<Postgres> + 'i,
+    I: Iterator<Item = &'i T>,
+{
+    let iter = &mut iter.peekable();
+    let type_info = if let Some(item) = iter.peek() {
+        item.produces().unwrap_or_else(T::type_info)
+    } else {
+        T::type_info()
+    };
+
+    buf.extend(&1_i32.to_be_bytes()); // number of dimensions
+    buf.extend(&0_i32.to_be_bytes()); // flags
+
+    // element type
+    match type_info.0 {
+        PgType::DeclareWithName(name) => buf.patch_type_by_name(&name),
+
+        ty => {
+            buf.extend(&ty.oid().0.to_be_bytes());
+        }
+    }
+
+    buf.extend(&(len as i32).to_be_bytes()); // len
+    buf.extend(&1_i32.to_be_bytes()); // lower bound
+
+    for element in iter {
+        buf.encode(element);
+    }
+
+    IsNull::No
 }
 
 impl<'r, T, const N: usize> Decode<'r, Postgres> for [T; N]
